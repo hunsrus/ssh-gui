@@ -2,12 +2,16 @@
 #include "ui_mainwindow.h"
 #include <QProcess>
 #include <iostream>
+#include "sessionhandler.h"
+
+
 
 MainWindow::MainWindow(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    ui->lePass->setEchoMode(QLineEdit::Password);
 }
 
 MainWindow::~MainWindow()
@@ -16,27 +20,18 @@ MainWindow::~MainWindow()
 }
 
 
+
 void MainWindow::on_pushButton_clicked()
 {
-    QProcess qprocess;
-    QString command;
-    QStringList args;
+    SessionHandler* sh = new SessionHandler();
+    std::string userName = ui->leUser->text().toStdString();
+    std::string host = ui->leServer->text().toStdString();//"152.169.146.69"
+    std::string pass = ui->lePass->text().toStdString();
 
-    command = "echo";
-    //args<<"-X"<<"hunsrus@192.168.0.186"<<"/home/hunsrus/build-ssh-gui-Qt5-Debug/ssh-gui";
-    args<<"aeea"<<"|"<<"ssh"<<"-tt"<<"hunsrus@192.168.0.186";
+    sh->start_session(userName,host,pass);
 
-    qprocess.start(command,args,QIODevice::ReadWrite);
-    qprocess.waitForStarted();
-    qprocess.write("aeea");
-    qprocess.waitForFinished();
+    sh->show_remote_processes();
 
-    QString stdout = qprocess.readAllStandardOutput();
-    std::cout << stdout.toStdString() << std::endl;
-
-    QString stderror = qprocess.readAllStandardError();
-    std::cout << stderror.toStdString() << std::endl;
-
-    system("echo aeea | ssh -tt hunsrus@192.168.0.186");
+    delete(sh);
 }
 
