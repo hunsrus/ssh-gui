@@ -99,7 +99,95 @@ int SessionHandler::verify_knownhost()
     return 0;
 }
 
-int SessionHandler::show_remote_processes()
+int SessionHandler::list_files()
+{
+    ssh_channel channel;
+    int rc, i, j = 0, k, space_counter;
+    char buffer[256];
+    char item_buffer[256];
+    bool dir, ignore_first = true;
+    char* item_name;
+    int nbytes;
+
+    strcpy(buffer,"ls -l --group-directories-first ");
+    strcat(buffer,currentPath.c_str());
+
+    file_list.clear(); //LIMPIA LA LISTA ANTES DE AGREGARLE
+
+    channel = ssh_channel_new(session);
+    if (channel == NULL)
+      return SSH_ERROR;
+
+    rc = ssh_channel_open_session(channel);
+    if (rc != SSH_OK)
+    {
+      ssh_channel_free(channel);
+      return rc;
+    }
+
+    rc = ssh_channel_request_exec(channel, buffer);
+    if (rc != SSH_OK)
+    {
+      ssh_channel_close(channel);
+      ssh_channel_free(channel);
+      return rc;
+    }
+
+    nbytes = ssh_channel_read(channel, buffer, sizeof(buffer), 0);
+    while (nbytes > 0)
+    {
+        for(i  = 0; i < nbytes; i++)
+        {
+            item_buffer[j] = buffer[i];
+            j++;
+            if(buffer[i] == '\n')
+            {
+                if(ignore_first) ignore_first = false;
+                else
+                {
+                    item_buffer[j-1] = '\0';                //j-1 PARA BORRAR EL ÚLTIMO SALTO DE LÍNEA
+                    //item_name = strrchr(item_buffer,' ')+1; //+1 PARA QUE NO GUARDE EL ESPACIO QUE DEJA ADELANTE DEL NOMBRE
+
+                    space_counter = 0;
+                    k = 0;
+                    while((space_counter <= 7) && (k < j-1))
+                    {
+                        if((item_buffer[k] == ' ') && (item_buffer[k+1] != ' ')) space_counter++;
+                        k++;
+                    }
+                    item_name = &item_buffer[k];
+
+                    if (item_buffer[0] == 'd') dir = true;
+                    else dir = false;
+
+                    file_list.push_back(new Item{item_name,dir});
+                }
+                j = 0;
+            }
+        }
+        nbytes = ssh_channel_read(channel, buffer, sizeof(buffer), 0);
+    }
+
+    if (nbytes < 0)
+    {
+      ssh_channel_close(channel);
+      ssh_channel_free(channel);
+      return SSH_ERROR;
+    }
+
+    ssh_channel_send_eof(channel);
+    ssh_channel_close(channel);
+    ssh_channel_free(channel);
+
+    return SSH_OK;
+}
+
+std::list<Item*> SessionHandler::get_file_list()
+{
+    return this->file_list;
+}
+
+int SessionHandler::show_remote_processes(const char* cmd)
 {
       ssh_channel channel;
       int rc;
@@ -117,7 +205,7 @@ int SessionHandler::show_remote_processes()
         return rc;
       }
 
-      rc = ssh_channel_request_exec(channel, "ls -lah");
+      rc = ssh_channel_request_exec(channel, cmd);
       if (rc != SSH_OK)
       {
         ssh_channel_close(channel);
@@ -169,7 +257,7 @@ int SessionHandler::start_session(std::string user, std::string host, std::strin
         fprintf(stderr, "Error connecting to localhost: %s\n",
             ssh_get_error(session));
         ssh_free(session);
-        exit(-1);
+        return -1;
     }
 
     // Verify the server's identity
@@ -178,7 +266,7 @@ int SessionHandler::start_session(std::string user, std::string host, std::strin
     {
         ssh_disconnect(session);
         ssh_free(session);
-        exit(-1);
+        return -1;
     }
 
     // Authenticate ourselves
@@ -189,8 +277,191 @@ int SessionHandler::start_session(std::string user, std::string host, std::strin
             ssh_get_error(session));
         ssh_disconnect(session);
         ssh_free(session);
-        exit(-1);
+        return -1;
     }
+
+    this->userName = user;
+
+    return 0;
+}
+
+int SessionHandler::scp_upload(std::string pathToFile, QProgressBar *pbar)
+{
+    ssh_scp scp;
+    int rc;
+
+    scp = ssh_scp_new
+    (session, SSH_SCP_WRITE | SSH_SCP_RECURSIVE, ".");
+    if (scp == NULL)
+    {
+        fprintf(stderr, "Error allocating scp session: %s\n",
+            ssh_get_error(session));
+        return SSH_ERROR;
+    }
+
+    rc = ssh_scp_init(scp);
+    if (rc != SSH_OK)
+    {
+        fprintf(stderr, "Error initializing scp session: %s\n",
+            ssh_get_error(session));
+        ssh_scp_free(scp);
+        return rc;
+    }
+
+
+    std::string fileName = pathToFile;
+    fileName.erase(0,fileName.find_last_of('/')+1);
+    int fileSize = std::filesystem::file_size(pathToFile);
+    std::ifstream inputFile(pathToFile,std::ios::binary);
+    char buffer[2048];
+
+    rc = ssh_scp_push_file(scp, fileName.c_str(), fileSize, S_IRUSR |  S_IWUSR);
+    if (rc != SSH_OK)
+    {
+        fprintf(stderr, "Can't open remote file: %s\n",
+            ssh_get_error(session));
+        return rc;
+    }
+
+    unsigned int count = 0;
+    while (inputFile)
+    {
+        inputFile.read(buffer, sizeof(buffer));
+        rc = ssh_scp_write(scp, buffer, sizeof(buffer));
+        if (rc != SSH_OK)
+        {
+            fprintf(stderr, "Cant write to remote file: %s\n", ssh_get_error(session));
+            return rc;
+        }
+        count++;
+        pbar->setValue(count*sizeof(buffer)*100/fileSize);
+        QApplication::processEvents();
+    }
+
+    std::cout << "File uploaded" << std::endl;
+
+    ssh_scp_close(scp);
+    ssh_scp_free(scp);
+    return SSH_OK;
+}
+
+int SessionHandler::scp_download(std::string fileName, QProgressBar *pbar)
+{
+    ssh_scp scp;
+    int rc;
+    int fileSize, mode;
+    unsigned int count = 0;
+    char buffer[256];
+    std::string filePath = fileName;
+    std::string downloadPath = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation).toStdString();
+
+    downloadPath.append("/");
+    downloadPath.append(fileName);
+    std::ofstream outputFile(downloadPath,std::ios::binary);
+
+    filePath.insert(0,1,'/');
+    filePath.insert(0,this->getCurrentPath());
+
+    scp = ssh_scp_new(session, SSH_SCP_READ, fileName.c_str());
+    if (scp == NULL)
+    {
+        fprintf(stderr, "Error allocating scp session: %s\n",ssh_get_error(session));
+        return SSH_ERROR;
+    }
+
+    rc = ssh_scp_init(scp);
+    if (rc != SSH_OK)
+    {
+        fprintf(stderr, "Error initializing scp session: %s\n",ssh_get_error(session));
+        ssh_scp_free(scp);
+        return rc;
+    }
+
+    rc = ssh_scp_pull_request(scp);
+    if (rc != SSH_SCP_REQUEST_NEWFILE)
+    {
+        fprintf(stderr, "Error receiving information about file: %s\n",ssh_get_error(session));
+        return SSH_ERROR;
+    }
+
+    fileSize = ssh_scp_request_get_size(scp);
+    mode = ssh_scp_request_get_permissions(scp);
+    printf("Receiving file %s, size %d, permissions 0%o\n",fileName.c_str(), fileSize, mode);
+
+    ssh_scp_accept_request(scp);
+    rc = ssh_scp_read(scp, buffer, sizeof(buffer));
+    outputFile.write(buffer, rc);
+    count++;
+    pbar->setValue(count*sizeof(buffer)*100/fileSize);
+    QApplication::processEvents();
+    while(rc >= (int)sizeof(buffer))
+    {
+        rc = ssh_scp_read(scp, buffer, sizeof(buffer));
+        if (rc != SSH_ERROR)
+        {
+            outputFile.write(buffer, rc);
+            count++;
+            pbar->setValue(count*sizeof(buffer)*100/fileSize);
+            QApplication::processEvents();
+        }
+        else rc++;
+    }
+    outputFile.close();
+    if (rc < 0)
+    {
+        fprintf(stderr, "Error receiving file data: %s\n",
+            ssh_get_error(session));
+        return rc;
+    }
+    std::cout << "Done" << std::endl;
+
+    rc = ssh_scp_pull_request(scp);
+    if (rc != SSH_SCP_REQUEST_EOF)
+    {
+        fprintf(stderr, "Unexpected request: %s\n",
+            ssh_get_error(session));
+        return SSH_ERROR;
+    }
+
+
+    ssh_scp_close(scp);
+    ssh_scp_free(scp);
+    return SSH_OK;
+}
+
+std::string SessionHandler::getUserName()
+{
+    return this->userName;
+}
+
+std::string SessionHandler::getCurrentPath()
+{
+    return this->currentPath;
+}
+
+void SessionHandler::back_path()
+{
+    std::size_t pos = currentPath.find_last_of('/');
+    currentPath.erase(pos,currentPath.length());
+    if(strcmp(currentPath.c_str(),"/home") == 0)
+    {
+        currentPath.append("/");
+        currentPath.append(this->userName);
+    }
+}
+
+int SessionHandler::move_path(const char* folder)
+{
+    bool exists = false;
+    for(std::list<Item*>::iterator it = file_list.begin(); it != file_list.end(); it++)
+    {
+        if(strcmp((*it)->name.c_str(),folder) == 0) exists = true;
+    }
+    if(exists)
+    {
+        currentPath.append("/");
+        currentPath.append(folder);
+    }else return -1;
 
     return 0;
 }
