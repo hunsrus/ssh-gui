@@ -16,6 +16,10 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     ui->pBarUpload->hide();
     ui->pBarDownload->hide();
+    ui->pbBack->hide();
+    ui->labPath->setText("Desconectado");
+    ui->pbDownload->hide();
+    ui->pbUpload->hide();
 }
 
 MainWindow::~MainWindow()
@@ -31,7 +35,7 @@ void MainWindow::on_pbConnect_clicked()
     AuthWindow auth(this);
     this->sh = new SessionHandler();
     int ssh_ok;
-    std::string path;
+    std::string path = "/";
 
     if(auth.exec())
     {
@@ -46,10 +50,12 @@ void MainWindow::on_pbConnect_clicked()
             sh->move_path(userName.c_str());
             sh->list_files();
             refresh_list_widget();
-            path = ui->labPath->text().toStdString();
             path.append(sh->getUserName());
             ui->labPath->setText(QString::fromStdString(path));
+            ui->pbBack->show();
             ui->pbConnect->setText("Conectado");
+            ui->pbUpload->show();
+            ui->pbDownload->show();
         }
     }
 }
@@ -116,18 +122,18 @@ void MainWindow::on_pbUpload_clicked()
     {
         selected_files = search_window.selectedFiles();
         pathToFile = selected_files.at(0).toStdString();
+
+        ui->pbUpload->hide();
+        ui->pBarUpload->show();
+
+        sh->scp_upload(pathToFile, ui->pBarUpload);
+
+        ui->pBarUpload->hide();
+        ui->pbUpload->show();
+
+        sh->list_files();
+        refresh_list_widget();
     }
-
-    ui->pbUpload->hide();
-    ui->pBarUpload->show();
-
-    sh->scp_upload(pathToFile, ui->pBarUpload);
-
-    ui->pBarUpload->hide();
-    ui->pbUpload->show();
-
-    sh->list_files();
-    refresh_list_widget();
 }
 
 void MainWindow::on_pbDownload_clicked()
@@ -135,10 +141,10 @@ void MainWindow::on_pbDownload_clicked()
     ui->pbDownload->hide();
     ui->pBarDownload->show();
     QList<QListWidgetItem*> selected_items = ui->lwFiles->selectedItems();
+
     for(QList<QListWidgetItem*>::iterator it = selected_items.begin(); it != selected_items.end(); it++)
-    {
         sh->scp_download((*it)->text().toStdString(), ui->pBarDownload);
-    }
+
     ui->pBarDownload->hide();
     ui->pbDownload->show();
 }

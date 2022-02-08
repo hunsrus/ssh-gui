@@ -362,7 +362,7 @@ int SessionHandler::scp_download(std::string fileName, QProgressBar *pbar)
     filePath.insert(0,1,'/');
     filePath.insert(0,this->getCurrentPath());
 
-    scp = ssh_scp_new(session, SSH_SCP_READ, fileName.c_str());
+    scp = ssh_scp_new(session, SSH_SCP_READ, filePath.c_str());
     if (scp == NULL)
     {
         fprintf(stderr, "Error allocating scp session: %s\n",ssh_get_error(session));
