@@ -108,9 +108,11 @@ int SessionHandler::list_files()
     bool dir, ignore_first = true;
     char* item_name;
     int nbytes;
+    std::string quotedPath;
 
     strcpy(buffer,"ls -l --group-directories-first ");
-    strcat(buffer,currentPath.c_str());
+    //Le agrego comillas a la dirección para evitar errores en archivos con espacios en el nombre
+    strcat(buffer,quoteString(currentPath).c_str());
 
     file_list.clear(); //LIMPIA LA LISTA ANTES DE AGREGARLE
 
@@ -239,7 +241,7 @@ int SessionHandler::show_remote_processes(const char* cmd)
       return SSH_OK;
 }
 
-int SessionHandler::start_session(std::string user, std::string host, std::string password)
+int SessionHandler::start_session(std::string user, std::string host, std::string password, std::string port)
 {
     int rc;
 
@@ -249,6 +251,7 @@ int SessionHandler::start_session(std::string user, std::string host, std::strin
     exit(-1);
     ssh_options_set(session, SSH_OPTIONS_USER, user.c_str());
     ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str());
+    ssh_options_set(session, SSH_OPTIONS_PORT_STR, port.c_str());
 
     // Connect to server
     rc = ssh_connect(session);
@@ -311,6 +314,9 @@ int SessionHandler::scp_upload(std::string pathToFile, QProgressBar *pbar)
 
     std::string fileName = pathToFile;
     fileName.erase(0,fileName.find_last_of('/')+1);
+
+    //Para subir no hace falta agregar comillas para evitar errores de espacios
+
     int fileSize = std::filesystem::file_size(pathToFile);
     std::ifstream inputFile(pathToFile,std::ios::binary);
     char buffer[2048];
@@ -347,6 +353,7 @@ int SessionHandler::scp_upload(std::string pathToFile, QProgressBar *pbar)
 
 int SessionHandler::scp_download(std::string fileName, QProgressBar *pbar)
 {
+    //Para descargar tampoco hay problema con los espacios
     ssh_scp scp;
     int rc;
     int fileSize, mode;
@@ -464,4 +471,12 @@ int SessionHandler::move_path(const char* folder)
     }else return -1;
 
     return 0;
+}
+
+std::string SessionHandler::quoteString(std::string string)
+{
+    std::string ret = string;
+    ret.insert(0,1,'"');
+    ret.append("\"");
+    return ret;
 }

@@ -41,9 +41,10 @@ void MainWindow::on_pbConnect_clicked()
     {
         std::string userName = auth.ui->leUser->text().toStdString();
         std::string host = "152.169.146.69";
+        std::string port = "2222";
         std::string pass = auth.ui->lePass->text().toStdString();
 
-        ssh_ok = sh->start_session(userName,host,pass);
+        ssh_ok = sh->start_session(userName,host,pass, port);
         if(!ssh_ok)
         {
             sh->list_files();

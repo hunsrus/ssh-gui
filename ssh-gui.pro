@@ -40,9 +40,3 @@ else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$PWD/lib/debug/l
 else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$PWD/lib/release/ssh.lib
 else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$PWD/lib/debug/ssh.lib
 else:unix: PRE_TARGETDEPS += $$PWD/lib/libssh.a
-
-DISTFILES += \
-    src/file.png \
-    src/folder.png
-
-RESOURCES +=

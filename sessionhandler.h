@@ -30,7 +30,7 @@ public:
     SessionHandler();
     int verify_knownhost();
     int show_remote_processes(const char* cmd);
-    int start_session(std::string user, std::string host, std::string password);
+    int start_session(std::string user, std::string host, std::string password, std::string port);
     int list_files();
     void back_path();
     int move_path(const char* folder);
@@ -39,6 +39,7 @@ public:
     int scp_download(std::string fileName, QProgressBar *pbar);
     std::string getUserName();
     std::string getCurrentPath();
+    std::string quoteString(std::string string);
     ~SessionHandler();
 };
 
